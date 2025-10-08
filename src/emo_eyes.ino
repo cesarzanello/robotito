@@ -33,21 +33,23 @@ Ojo ojoIzquierdo;
 Ojo ojoDerecho;
 
 // Tiempos de la animación de parpadeo (en milisegundos).
-static constexpr uint32_t INTERVALO_PARPADEO_MIN = 2500;
-static constexpr uint32_t INTERVALO_PARPADEO_MAX = 4500;
-static constexpr uint32_t DURACION_PARPADEO = 200; // Tiempo para cerrar o abrir los párpados
+static constexpr uint32_t INTERVALO_PARPADEO_MIN = 1800;
+static constexpr uint32_t INTERVALO_PARPADEO_MAX = 3200;
+static constexpr uint32_t DURACION_PARPADEO = 140; // Tiempo para cerrar o abrir los párpados
 
 uint32_t proximoParpadeoEn = 0;
 bool estaParpadeando = false;
 bool ojosCerrandose = true;
 uint32_t inicioFaseParpadeo = 0;
 float progresoParpado = 0.0f; // 0 = abierto, 1 = completamente cerrado
+float ultimoProgresoRenderizado = -1.0f;
 
 // Declaraciones anticipadas.
 void programarSiguienteParpadeo();
 void dibujarOjos(float cantidadParpado);
 void dibujarOjo(const Ojo &ojo, float cantidadParpado);
 void rellenarElipse(int16_t centroX, int16_t centroY, int16_t ancho, int16_t alto, uint16_t color);
+float suavizadoEaseInOut(float t);
 
 void setup() {
   if (TFT_BL >= 0) {
@@ -84,15 +86,17 @@ void loop() {
     uint32_t faseTranscurrida = now - inicioFaseParpadeo;
     float progresoFase = constrain(static_cast<float>(faseTranscurrida) / DURACION_PARPADEO, 0.0f, 1.0f);
 
+    float progresoSuavizado = suavizadoEaseInOut(progresoFase);
+
     if (ojosCerrandose) {
-      progresoParpado = progresoFase;
+      progresoParpado = progresoSuavizado;
       if (faseTranscurrida >= DURACION_PARPADEO) {
         // Cambia a la fase de apertura.
         ojosCerrandose = false;
         inicioFaseParpadeo = now;
       }
     } else {
-      progresoParpado = 1.0f - progresoFase;
+      progresoParpado = 1.0f - progresoSuavizado;
       if (faseTranscurrida >= DURACION_PARPADEO) {
         estaParpadeando = false;
         progresoParpado = 0.0f;
@@ -102,7 +106,7 @@ void loop() {
   }
 
   dibujarOjos(progresoParpado);
-  delay(16); // Refresco aproximado de 60 FPS
+  delay(12); // Refresco aproximado de 80 FPS para una animación más fluida
 }
 
 void programarSiguienteParpadeo() {
@@ -111,17 +115,23 @@ void programarSiguienteParpadeo() {
 }
 
 void dibujarOjos(float cantidadParpado) {
+  if (fabsf(cantidadParpado - ultimoProgresoRenderizado) < 0.01f && !estaParpadeando) {
+    return;
+  }
+
+  ultimoProgresoRenderizado = cantidadParpado;
+
+  gfx->startWrite();
   dibujarOjo(ojoIzquierdo, cantidadParpado);
   dibujarOjo(ojoDerecho, cantidadParpado);
+  gfx->endWrite();
 }
 
 void dibujarOjo(const Ojo &ojo, float cantidadParpado) {
-  // Limpia la región del ojo antes de dibujar para evitar sombras.
   int16_t mitadAncho = ANCHO_OJO / 2;
   int16_t mitadAlto = ALTO_OJO / 2;
-  gfx->fillRect(ojo.centroX - mitadAncho - 2, ojo.centroY - mitadAlto - 2,
-                ANCHO_OJO + 4, ALTO_OJO + 4, COLOR_FONDO);
 
+  // Dibuja el ojo completo primero para asegurar que la reapertura quede limpia.
   rellenarElipse(ojo.centroX, ojo.centroY, ANCHO_OJO, ALTO_OJO, COLOR_OJO);
 
   if (cantidadParpado > 0.0f) {
@@ -151,4 +161,12 @@ void rellenarElipse(int16_t centroX, int16_t centroY, int16_t ancho, int16_t alt
     int16_t anchoLineaEntero = static_cast<int16_t>(anchoLinea + 0.5f);
     gfx->drawFastHLine(centroX - anchoLineaEntero, centroY + y, anchoLineaEntero * 2, color);
   }
+}
+
+float suavizadoEaseInOut(float t) {
+  t = constrain(t, 0.0f, 1.0f);
+  if (t < 0.5f) {
+    return 2.0f * t * t;
+  }
+  return 1.0f - powf(-2.0f * t + 2.0f, 2.0f) / 2.0f;
 }
