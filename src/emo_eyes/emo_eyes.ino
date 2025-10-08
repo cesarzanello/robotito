@@ -20,9 +20,8 @@ Arduino_GFX *gfx = new Arduino_GC9A01(bus, TFT_RST, 0 /* rotation */, true /* IP
 // Eye geometry and colors.
 static constexpr uint16_t COLOR_BACKGROUND = 0x0000; // Black
 static constexpr uint16_t COLOR_EYE = 0x07FF;        // Cyan
-static constexpr int16_t EYE_SIZE = 80;
-static constexpr int16_t EYE_WIDTH = EYE_SIZE;
-static constexpr int16_t EYE_HEIGHT = EYE_SIZE;
+static constexpr int16_t EYE_WIDTH = 60;
+static constexpr int16_t EYE_HEIGHT = 80;
 static constexpr int16_t EYE_PADDING = 10;
 static constexpr int16_t EYE_CORNER_RADIUS = 10;
 
