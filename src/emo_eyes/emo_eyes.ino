@@ -42,6 +42,7 @@ bool ojosCerrandose = true;
 uint32_t inicioFaseParpadeo = 0;
 float progresoParpado = 0.0f; // 0 = abierto, 1 = completamente cerrado
 float ultimoProgresoRenderizado = -1.0f;
+bool ojosVisibles = false;
 
 // Declaraciones anticipadas.
 void programarSiguienteParpadeo();
@@ -114,13 +115,17 @@ void programarSiguienteParpadeo() {
 }
 
 void dibujarOjos(float cantidadParpado) {
-  if (fabsf(cantidadParpado - ultimoProgresoRenderizado) < 0.01f && !estaParpadeando) {
+  bool necesitaRedibujar = !ojosVisibles || estaParpadeando ||
+                           fabsf(cantidadParpado - ultimoProgresoRenderizado) >= 0.01f;
+  if (!necesitaRedibujar) {
     return;
   }
 
   ultimoProgresoRenderizado = cantidadParpado;
+  ojosVisibles = true;
 
   gfx->startWrite();
+  gfx->fillScreen(COLOR_FONDO);
   dibujarOjo(ojoIzquierdo, cantidadParpado);
   dibujarOjo(ojoDerecho, cantidadParpado);
   gfx->endWrite();
