@@ -20,9 +20,11 @@ Arduino_GFX *gfx = new Arduino_GC9A01(bus, TFT_RST, 0 /* rotation */, true /* IP
 // Eye geometry and colors.
 static constexpr uint16_t COLOR_BACKGROUND = 0x0000; // Black
 static constexpr uint16_t COLOR_EYE = 0x07FF;        // Cyan
-static constexpr int16_t EYE_WIDTH = 60;
-static constexpr int16_t EYE_HEIGHT = 80;
+static constexpr int16_t EYE_SIZE = 80;
+static constexpr int16_t EYE_WIDTH = EYE_SIZE;
+static constexpr int16_t EYE_HEIGHT = EYE_SIZE;
 static constexpr int16_t EYE_PADDING = 10;
+static constexpr int16_t EYE_CORNER_RADIUS = 10;
 
 struct Eye {
   int16_t centerX;
@@ -42,12 +44,14 @@ bool isBlinking = false;
 bool eyesClosing = true;
 uint32_t blinkPhaseStart = 0;
 float eyelidProgress = 0.0f; // 0 = open, 1 = fully closed
+bool needsRedraw = true;
+static constexpr float EYELID_PROGRESS_EPSILON = 0.005f;
 
 // Forward declarations.
 void scheduleNextBlink();
 void drawEyes(float eyelidAmount);
 void drawEye(const Eye &eye, float eyelidAmount);
-void fillEllipse(int16_t centerX, int16_t centerY, int16_t width, int16_t height, uint16_t color);
+void fillRoundedRect(int16_t x, int16_t y, int16_t width, int16_t height, int16_t radius, uint16_t color);
 
 void setup() {
   if (TFT_BL >= 0) {
@@ -69,10 +73,12 @@ void setup() {
 
   scheduleNextBlink();
   drawEyes(0.0f);
+  needsRedraw = false;
 }
 
 void loop() {
   uint32_t now = millis();
+  float previousEyelidProgress = eyelidProgress;
 
   if (!isBlinking && now >= nextBlinkAt) {
     isBlinking = true;
@@ -101,8 +107,16 @@ void loop() {
     }
   }
 
-  drawEyes(eyelidProgress);
-  delay(16); // ~60 FPS refresh
+  if (fabsf(eyelidProgress - previousEyelidProgress) >= EYELID_PROGRESS_EPSILON) {
+    needsRedraw = true;
+  }
+
+  if (needsRedraw) {
+    drawEyes(eyelidProgress);
+    needsRedraw = false;
+  }
+
+  delay(1);
 }
 
 void scheduleNextBlink() {
@@ -122,7 +136,8 @@ void drawEye(const Eye &eye, float eyelidAmount) {
   gfx->fillRect(eye.centerX - halfWidth - 2, eye.centerY - halfHeight - 2,
                 EYE_WIDTH + 4, EYE_HEIGHT + 4, COLOR_BACKGROUND);
 
-  fillEllipse(eye.centerX, eye.centerY, EYE_WIDTH, EYE_HEIGHT, COLOR_EYE);
+  fillRoundedRect(eye.centerX - halfWidth, eye.centerY - halfHeight,
+                  EYE_WIDTH, EYE_HEIGHT, EYE_CORNER_RADIUS, COLOR_EYE);
 
   if (eyelidAmount > 0.0f) {
     int16_t coverHeight = static_cast<int16_t>(EYE_HEIGHT * eyelidAmount * 0.5f);
@@ -135,20 +150,29 @@ void drawEye(const Eye &eye, float eyelidAmount) {
   }
 }
 
-void fillEllipse(int16_t centerX, int16_t centerY, int16_t width, int16_t height, uint16_t color) {
-  float radiusX = width / 2.0f;
-  float radiusY = height / 2.0f;
-  float radiusXSquared = radiusX * radiusX;
-  float radiusYSquared = radiusY * radiusY;
+void fillRoundedRect(int16_t x, int16_t y, int16_t width, int16_t height, int16_t radius, uint16_t color) {
+  int16_t maxRadius = min(width, height) / 2;
+  int16_t clampedRadius = radius;
+  if (clampedRadius > maxRadius) {
+    clampedRadius = maxRadius;
+  }
+  int16_t innerWidth = width - 2 * clampedRadius;
+  int16_t innerHeight = height - 2 * clampedRadius;
 
-  for (int16_t y = -static_cast<int16_t>(radiusY); y <= static_cast<int16_t>(radiusY); ++y) {
-    float normalizedY = static_cast<float>(y);
-    float term = 1.0f - (normalizedY * normalizedY) / radiusYSquared;
-    if (term < 0.0f) {
-      continue;
-    }
-    float span = sqrtf(term * radiusXSquared);
-    int16_t spanInt = static_cast<int16_t>(span + 0.5f);
-    gfx->drawFastHLine(centerX - spanInt, centerY + y, spanInt * 2, color);
+  if (innerWidth > 0) {
+    gfx->fillRect(x + clampedRadius, y, innerWidth, height, color);
+  }
+
+  if (innerHeight > 0) {
+    gfx->fillRect(x, y + clampedRadius, clampedRadius, innerHeight, color);
+    gfx->fillRect(x + width - clampedRadius, y + clampedRadius, clampedRadius, innerHeight, color);
+  }
+
+  for (int16_t dy = 0; dy < clampedRadius; ++dy) {
+    int16_t dx = static_cast<int16_t>(sqrtf(static_cast<float>(clampedRadius * clampedRadius - dy * dy)) + 0.5f);
+    int16_t lineWidth = innerWidth + dx * 2;
+    int16_t startX = x + clampedRadius - dx;
+    gfx->drawFastHLine(startX, y + dy, lineWidth, color);
+    gfx->drawFastHLine(startX, y + height - 1 - dy, lineWidth, color);
   }
 }
