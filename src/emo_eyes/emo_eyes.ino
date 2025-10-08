@@ -11,10 +11,9 @@ TFT_eSprite rightEye = TFT_eSprite(&tft);
 const int EYE_W = 60;       // ancho
 const int EYE_H = 80;       // alto
 const int RADIUS = 10;      // radio esquinas
-const int GAP = 10;         // separación entre ojos
+const int GAP = 15;         // separación entre ojos
 
 const uint16_t EYE_FILL   = TFT_CYAN;
-const uint16_t EYE_BORDER = TFT_WHITE;
 const uint16_t BG_COLOR   = TFT_BLACK;
 
 /// ---------- Posición en pantalla ----------
@@ -32,25 +31,30 @@ const unsigned long CLOSE_TIME_MS     = 120;   // duración del cierre
 const unsigned long CLOSED_HOLD_MS    =  60;   // tiempo “cerrado”
 const unsigned long OPEN_TIME_MS      = 120;   // duración de la apertura
 
-// Progreso del párpado (0.0 = abierto, 1.0 = cerrado)
+// Progreso del párpado (0.0 = abierto, 1.0 = totalmente cerrado)
 float lidProgress = 0.0f;
 
-// Dibuja el contenido de UN ojo dentro del sprite según el “progreso de párpado”
+// Easing para suavizar el movimiento
+static inline float easeInOutQuad(float x) {
+  return (x < 0.5f) ? 2.0f*x*x : 1.0f - ((-2.0f*x + 2.0f)*(-2.0f*x + 2.0f))/2.0f;
+}
+
+// Dibuja UN ojo con cierre hacia el centro (sin bordes)
 void renderEyeSprite(TFT_eSprite& spr) {
-  // Limpiar sprite
   spr.fillSprite(BG_COLOR);
 
-  // Ojo base (relleno + borde)
+  // Ojo base (relleno)
   spr.fillRoundRect(0, 0, EYE_W, EYE_H, RADIUS, EYE_FILL);
-  spr.drawRoundRect(0, 0, EYE_W, EYE_H, RADIUS, EYE_BORDER);
 
-  // Tapa (párpado) – cubre desde arriba hacia abajo
-  int lidHeight = (int)(lidProgress * EYE_H);
-  if (lidHeight > 0) {
-    spr.fillRoundRect(0, 0, EYE_W, lidHeight, RADIUS, BG_COLOR);
-    // Para que el borde superior quede “limpio”, se puede redibujar una línea
-    // superior del borde si querés un look más marcado (opcional):
-    // spr.drawRoundRect(0, 0, EYE_W, EYE_H, RADIUS, EYE_BORDER);
+  // Altura de cada tapa (mitad superior e inferior)
+  int halfH = EYE_H / 2;
+  int lidH  = (int)(lidProgress * halfH);
+
+  if (lidH > 0) {
+    // Párpado superior que baja
+    spr.fillRoundRect(0, 0, EYE_W, lidH, 0, BG_COLOR);
+    // Párpado inferior que sube
+    spr.fillRoundRect(0, EYE_H - lidH, EYE_W, lidH, 0, BG_COLOR);
   }
 }
 
@@ -60,36 +64,33 @@ void pushEyes() {
   rightEye.pushSprite(rightX, eyesY);
 }
 
-// Llama para iniciar un parpadeo (cuando están abiertos)
+// Inicia el parpadeo
 void startBlink() {
   blinkState = CLOSING;
   stateStartMs = millis();
 }
 
-// Actualiza la máquina de estados del parpadeo (sin delays)
-// Debe llamarse en loop()
+// Actualiza la animación (sin delays)
 void updateBlink() {
   unsigned long now = millis();
   unsigned long elapsed = now - stateStartMs;
 
   switch (blinkState) {
     case OPEN:
-      // Espera hasta el próximo blink
+      lidProgress = 0.0f;
       if (now - lastUpdateMs >= BLINK_INTERVAL_MS) {
         startBlink();
       }
-      lidProgress = 0.0f;
       break;
 
     case CLOSING: {
-      // Avanza de 0 → 1 en CLOSE_TIME_MS (lineal)
       float p = (float)elapsed / (float)CLOSE_TIME_MS;
       if (p >= 1.0f) {
         lidProgress = 1.0f;
         blinkState = CLOSED;
         stateStartMs = now;
       } else {
-        lidProgress = p;
+        lidProgress = easeInOutQuad(p);
       }
     } break;
 
@@ -102,32 +103,29 @@ void updateBlink() {
       break;
 
     case OPENING: {
-      // Vuelve de 1 → 0 en OPEN_TIME_MS (lineal)
       float p = (float)elapsed / (float)OPEN_TIME_MS;
       if (p >= 1.0f) {
         lidProgress = 0.0f;
         blinkState = OPEN;
         stateStartMs = now;
-        lastUpdateMs = now; // reinicia intervalo
+        lastUpdateMs = now;
       } else {
-        lidProgress = 1.0f - p;
+        lidProgress = 1.0f - easeInOutQuad(p);
       }
     } break;
   }
 
-  // Redibujar sprites según progreso actual
+  // Redibujar ambos ojos según progreso actual
   renderEyeSprite(leftEye);
   renderEyeSprite(rightEye);
   pushEyes();
 }
 
-/// ---------- Init de ojos y posiciones ----------
+/// ---------- Inicialización ----------
 void initEyes() {
-  // Crear los sprites
   leftEye.createSprite(EYE_W, EYE_H);
   rightEye.createSprite(EYE_W, EYE_H);
 
-  // Calcular posiciones centradas (pantalla 240x240 por defecto)
   int W = tft.width();
   int H = tft.height();
   int totalWidth = (EYE_W * 2) + GAP;
@@ -138,14 +136,12 @@ void initEyes() {
   rightX = startX + EYE_W + GAP;
   eyesY  = startY;
 
-  // Estado inicial: ojos abiertos renderizados una vez
   lidProgress = 0.0f;
+  tft.fillScreen(BG_COLOR);
   renderEyeSprite(leftEye);
   renderEyeSprite(rightEye);
-  tft.fillScreen(BG_COLOR);
   pushEyes();
 
-  // Inicializa temporizadores
   lastUpdateMs = millis();
   stateStartMs = millis();
   blinkState   = OPEN;
@@ -153,12 +149,11 @@ void initEyes() {
 
 void setup() {
   tft.init();
-  tft.setRotation(0);  // ajustá según tu montaje
+  tft.setRotation(0);
   tft.fillScreen(BG_COLOR);
-
   initEyes();
 }
 
 void loop() {
-  updateBlink();  // parpadeo no bloqueante
+  updateBlink();
 }
