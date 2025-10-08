@@ -4,40 +4,32 @@
 
 TFT_eSPI tft = TFT_eSPI();
 
-// Sprites individuales para cada ojo
-TFT_eSprite leftEye  = TFT_eSprite(&tft);
-TFT_eSprite rightEye = TFT_eSprite(&tft);
+// ===== Parámetros ojos =====
+const int EYE_W = 60;
+const int EYE_H_NORMAL = 80;
+const int EYE_H_SHRINK = 70;
+const int RADIUS = 15;
+const int GAP = 15;
 
-/// ---------- Parámetros de los ojos ----------
-const int EYE_W = 60;       // ancho
-const int EYE_H = 80;       // alto
-const int RADIUS = 10;      // radio esquinas
-const int GAP = 15;         // separación entre ojos
+const uint16_t BG_COLOR = TFT_BLACK;
+const uint16_t EYE_FILL = TFT_CYAN;
 
-const uint16_t EYE_FILL   = TFT_CYAN;
-const uint16_t BG_COLOR   = TFT_BLACK;
+// ===== Movimiento =====
+const int MOVE_AMPLITUDE_X = 50;
+const unsigned long MOVE_TIME_MS = 150;   // ida/vuelta
+const unsigned long HOLD_TIME_MS = 2000;  // espera en el extremo
 
-/// ---------- Posición en pantalla ----------
-int leftX, rightX, eyesY;
-
-/// ---------- Parpadeo (configurable) ----------
-enum BlinkState { OPEN, CLOSING, CLOSED, OPENING };
-BlinkState blinkState = OPEN;
-
-unsigned long lastUpdateMs = 0;
-unsigned long stateStartMs = 0;
-
-const unsigned long BLINK_INTERVAL_MS = 2500;  // cada cuánto inicia un parpadeo
-const unsigned long CLOSE_TIME_MS     = 120;   // duración del cierre
-const unsigned long CLOSED_HOLD_MS    =  60;   // tiempo “cerrado”
-const unsigned long OPEN_TIME_MS      = 120;   // duración de la apertura
-
-// Progreso del párpado (0.0 = abierto, 1.0 = totalmente cerrado)
+// ===== Parpadeo normal (tapas rectas) =====
+enum BlinkState { BOPEN, BCLOSING, BCLOSED, BOPENING };
+BlinkState blinkState = BOPEN;
+unsigned long blinkStateStartMs = 0;
+unsigned long lastBlinkIntervalStart = 0;
+unsigned long BLINK_INTERVAL_MS = 2500;
+const unsigned long CLOSE_TIME_MS  = 120;
+const unsigned long CLOSED_HOLD_MS =  60;
+const unsigned long OPEN_TIME_MS   = 120;
 float lidProgress = 0.0f;
 
-<<<<<<< Updated upstream
-// Easing para suavizar el movimiento
-=======
 // ===== Movimiento con periodo de 10 s =====
 enum MoveState {
   IDLE,
@@ -96,42 +88,22 @@ int laughOffsetX = 0;
 int laughOffsetY = 0;
 
 // ---------- Utils ----------
->>>>>>> Stashed changes
 static inline float easeInOutQuad(float x) {
-  return (x < 0.5f) ? 2.0f*x*x : 1.0f - ((-2.0f*x + 2.0f)*(-2.0f*x + 2.0f))/2.0f;
+  return (x < 0.5f) ? (2.0f*x*x)
+                    : (1.0f - ((-2.0f*x + 2.0f)*(-2.0f*x + 2.0f))/2.0f);
 }
+int lerpInt(int a, int b, float t) {
+  if (t < 0) t = 0; if (t > 1) t = 1;
+  return a + (int)((b - a) * t);
+}
+float clamp01(float v){ return v<0?0:(v>1?1:v); }
 
-// Dibuja UN ojo con cierre hacia el centro (sin bordes)
-void renderEyeSprite(TFT_eSprite& spr) {
-  spr.fillSprite(BG_COLOR);
-
-  // Ojo base (relleno)
-  spr.fillRoundRect(0, 0, EYE_W, EYE_H, RADIUS, EYE_FILL);
-
-  // Altura de cada tapa (mitad superior e inferior)
-  int halfH = EYE_H / 2;
+// ---------- Ojo NORMAL (sin pupila) ----------
+void drawEyeNormal(int x, int y, int w, int h) {
+  stage.fillRoundRect(x, y, w, h, RADIUS, EYE_FILL);
+  int halfH = h / 2;
   int lidH  = (int)(lidProgress * halfH);
-
   if (lidH > 0) {
-<<<<<<< Updated upstream
-    // Párpado superior que baja
-    spr.fillRoundRect(0, 0, EYE_W, lidH, 0, BG_COLOR);
-    // Párpado inferior que sube
-    spr.fillRoundRect(0, EYE_H - lidH, EYE_W, lidH, 0, BG_COLOR);
-  }
-}
-
-// Vuelca ambos ojos a la pantalla
-void pushEyes() {
-  leftEye.pushSprite(leftX, eyesY);
-  rightEye.pushSprite(rightX, eyesY);
-}
-
-// Inicia el parpadeo
-void startBlink() {
-  blinkState = CLOSING;
-  stateStartMs = millis();
-=======
     stage.fillRect(x, y, w, lidH, BG_COLOR);             // tapa superior
     stage.fillRect(x, y + h - lidH, w, lidH, BG_COLOR);  // tapa inferior
   }
@@ -171,84 +143,70 @@ void renderScene() {
   int screenX = (tft.width()  - STAGE_W) / 2;
   int screenY = (tft.height() - STAGE_H) / 2;
   stage.pushSprite(screenX, screenY);
->>>>>>> Stashed changes
 }
 
-// Actualiza la animación (sin delays)
+// ---------- Parpadeo normal ----------
 void updateBlink() {
-<<<<<<< Updated upstream
-=======
   // Si está enojado o riendo, pausamos parpadeo normal
   if (angryActive || laughState == LAUGH_RUN) return;
 
->>>>>>> Stashed changes
   unsigned long now = millis();
-  unsigned long elapsed = now - stateStartMs;
+  unsigned long elapsed = now - blinkStateStartMs;
 
   switch (blinkState) {
-    case OPEN:
+    case BOPEN:
       lidProgress = 0.0f;
-      if (now - lastUpdateMs >= BLINK_INTERVAL_MS) {
-        startBlink();
+      if (now - lastBlinkIntervalStart >= BLINK_INTERVAL_MS) {
+        blinkState = BCLOSING; blinkStateStartMs = now;
       }
       break;
-
-    case CLOSING: {
+    case BCLOSING: {
       float p = (float)elapsed / (float)CLOSE_TIME_MS;
-      if (p >= 1.0f) {
-        lidProgress = 1.0f;
-        blinkState = CLOSED;
-        stateStartMs = now;
-      } else {
-        lidProgress = easeInOutQuad(p);
-      }
+      if (p >= 1.0f) { lidProgress = 1.0f; blinkState = BCLOSED; blinkStateStartMs = now; }
+      else           { lidProgress = easeInOutQuad(p); }
     } break;
-
-    case CLOSED:
-      lidProgress = 1.0f;
-      if (elapsed >= CLOSED_HOLD_MS) {
-        blinkState = OPENING;
-        stateStartMs = now;
-      }
+    case BCLOSED:
+      if (elapsed >= CLOSED_HOLD_MS) { blinkState = BOPENING; blinkStateStartMs = now; }
       break;
-
-    case OPENING: {
+    case BOPENING: {
       float p = (float)elapsed / (float)OPEN_TIME_MS;
-      if (p >= 1.0f) {
-        lidProgress = 0.0f;
-        blinkState = OPEN;
-        stateStartMs = now;
-        lastUpdateMs = now;
-      } else {
-        lidProgress = 1.0f - easeInOutQuad(p);
-      }
+      if (p >= 1.0f) { lidProgress = 0.0f; blinkState = BOPEN; lastBlinkIntervalStart = now; }
+      else           { lidProgress = 1.0f - easeInOutQuad(p); }
     } break;
   }
-
-  // Redibujar ambos ojos según progreso actual
-  renderEyeSprite(leftEye);
-  renderEyeSprite(rightEye);
-  pushEyes();
 }
 
-/// ---------- Inicialización ----------
-void initEyes() {
-  leftEye.createSprite(EYE_W, EYE_H);
-  rightEye.createSprite(EYE_W, EYE_H);
+// ---------- Movimiento (periodo 10 s, ojo de la dirección se achica) ----------
+void updateMove() {
+  unsigned long now = millis();
+  unsigned long elapsed = now - moveStateStartMs;
 
-  int W = tft.width();
-  int H = tft.height();
-  int totalWidth = (EYE_W * 2) + GAP;
-  int startX = (W - totalWidth) / 2;
-  int startY = (H - EYE_H) / 2;
+  switch (moveState) {
+    case IDLE:
+      moveOffsetX = 0;
+      leftEyeH  = EYE_H_NORMAL;
+      rightEyeH = EYE_H_NORMAL;
+      if (now >= nextMoveTriggerMs) {
+        moveState = nextDirectionRight ? MOVE_RIGHT_OUT : MOVE_LEFT_OUT;
+        moveStateStartMs = now;
+      }
+      break;
 
-  leftX  = startX;
-  rightX = startX + EYE_W + GAP;
-  eyesY  = startY;
+    case MOVE_RIGHT_OUT: {
+      float p = (float)elapsed / MOVE_TIME_MS;
+      if (p >= 1.0f) {
+        moveOffsetX = +MOVE_AMPLITUDE_X;
+        rightEyeH = EYE_H_SHRINK;
+        moveState = RIGHT_HOLD;
+        moveStateStartMs = now;
+      } else {
+        float e = easeInOutQuad(p);
+        moveOffsetX = (int)(+MOVE_AMPLITUDE_X * e);
+        rightEyeH = lerpInt(EYE_H_NORMAL, EYE_H_SHRINK, e);
+        leftEyeH  = EYE_H_NORMAL;
+      }
+    } break;
 
-<<<<<<< Updated upstream
-  lidProgress = 0.0f;
-=======
     case RIGHT_HOLD:
       moveOffsetX = +MOVE_AMPLITUDE_X;
       rightEyeH = EYE_H_SHRINK;
@@ -442,17 +400,8 @@ void updateLaugh() {
 
 // ---------- Init ----------
 void initScene() {
->>>>>>> Stashed changes
   tft.fillScreen(BG_COLOR);
-  renderEyeSprite(leftEye);
-  renderEyeSprite(rightEye);
-  pushEyes();
 
-<<<<<<< Updated upstream
-  lastUpdateMs = millis();
-  stateStartMs = millis();
-  blinkState   = OPEN;
-=======
   stage.setColorDepth(8);
   stage.createSprite(STAGE_W, STAGE_H);
 
@@ -483,20 +432,15 @@ void initScene() {
   laughOffsetX = 0; laughOffsetY = 0;
 
   renderScene();
->>>>>>> Stashed changes
 }
 
 void setup() {
   tft.init();
   tft.setRotation(0);
-  tft.fillScreen(BG_COLOR);
-  initEyes();
+  initScene();
 }
 
 void loop() {
-<<<<<<< Updated upstream
-  updateBlink();
-=======
   // 1) Despertar primero
   if (wakeState != WAKE_DONE) {
     updateWakeSequence();
@@ -509,5 +453,4 @@ void loop() {
   }
 
   renderScene();       // un solo push por frame (sin flicker)
->>>>>>> Stashed changes
 }
