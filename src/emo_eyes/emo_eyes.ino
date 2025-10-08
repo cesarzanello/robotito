@@ -1,92 +1,164 @@
-#include <Arduino.h>
-#include <Arduino_GFX_Library.h>
-#include <math.h>
+#include <TFT_eSPI.h>
+#include <SPI.h>
 
-// ========================= Configuración del display ==========================
-// Actualiza estas asignaciones de pines para que coincidan con tu cableado.
-static constexpr int8_t TFT_SCK = 18;   // SPI clock
-static constexpr int8_t TFT_MOSI = 23;  // SPI MOSI
-static constexpr int8_t TFT_MISO = -1;  // Not used by most displays
-static constexpr int8_t TFT_CS = 4;     // Chip select
-static constexpr int8_t TFT_DC = 2;     // Data/command
-static constexpr int8_t TFT_RST = 16;   // Reset pin (set to -1 if connected to ESP32 EN)
-static constexpr int8_t TFT_BL = -1;    // Backlight control pin (set to -1 if tied to VCC)
-// Objetos del bus SPI y del controlador de pantalla GC9A01A.
-Arduino_DataBus *bus = new Arduino_ESP32SPI(TFT_DC, TFT_CS, TFT_SCK, TFT_MOSI, TFT_MISO);
-Arduino_GFX *gfx = new Arduino_GC9A01(bus, TFT_RST, 0 /* rotación */, true /* IPS */);
-// ==============================================================================
+TFT_eSPI tft = TFT_eSPI();
 
-// Geometría de los ojos y colores.
-static constexpr uint16_t COLOR_FONDO = 0x0000; // Negro
-static constexpr uint16_t COLOR_OJO = 0x07FF;   // Cian
-static constexpr int16_t ANCHO_OJO = 60;
-static constexpr int16_t ALTO_OJO = 80;
-static constexpr int16_t ESPACIO_OJO = 10;
+// Sprites individuales para cada ojo
+TFT_eSprite leftEye  = TFT_eSprite(&tft);
+TFT_eSprite rightEye = TFT_eSprite(&tft);
 
-struct Ojo {
-  int16_t centroX;
-  int16_t centroY;
-};
+/// ---------- Parámetros de los ojos ----------
+const int EYE_W = 60;       // ancho
+const int EYE_H = 80;       // alto
+const int RADIUS = 10;      // radio esquinas
+const int GAP = 10;         // separación entre ojos
 
-Ojo ojoIzquierdo;
-Ojo ojoDerecho;
+const uint16_t EYE_FILL   = TFT_CYAN;
+const uint16_t EYE_BORDER = TFT_WHITE;
+const uint16_t BG_COLOR   = TFT_BLACK;
 
-// Declaraciones anticipadas.
-void dibujarOjos();
-void dibujarOjo(const Ojo &ojo);
-void rellenarElipse(int16_t centroX, int16_t centroY, int16_t ancho, int16_t alto, uint16_t color);
+/// ---------- Posición en pantalla ----------
+int leftX, rightX, eyesY;
 
-void setup() {
-  if (TFT_BL >= 0) {
-    pinMode(TFT_BL, OUTPUT);
-    digitalWrite(TFT_BL, HIGH);
+/// ---------- Parpadeo (configurable) ----------
+enum BlinkState { OPEN, CLOSING, CLOSED, OPENING };
+BlinkState blinkState = OPEN;
+
+unsigned long lastUpdateMs = 0;
+unsigned long stateStartMs = 0;
+
+const unsigned long BLINK_INTERVAL_MS = 2500;  // cada cuánto inicia un parpadeo
+const unsigned long CLOSE_TIME_MS     = 120;   // duración del cierre
+const unsigned long CLOSED_HOLD_MS    =  60;   // tiempo “cerrado”
+const unsigned long OPEN_TIME_MS      = 120;   // duración de la apertura
+
+// Progreso del párpado (0.0 = abierto, 1.0 = cerrado)
+float lidProgress = 0.0f;
+
+// Dibuja el contenido de UN ojo dentro del sprite según el “progreso de párpado”
+void renderEyeSprite(TFT_eSprite& spr) {
+  // Limpiar sprite
+  spr.fillSprite(BG_COLOR);
+
+  // Ojo base (relleno + borde)
+  spr.fillRoundRect(0, 0, EYE_W, EYE_H, RADIUS, EYE_FILL);
+  spr.drawRoundRect(0, 0, EYE_W, EYE_H, RADIUS, EYE_BORDER);
+
+  // Tapa (párpado) – cubre desde arriba hacia abajo
+  int lidHeight = (int)(lidProgress * EYE_H);
+  if (lidHeight > 0) {
+    spr.fillRoundRect(0, 0, EYE_W, lidHeight, RADIUS, BG_COLOR);
+    // Para que el borde superior quede “limpio”, se puede redibujar una línea
+    // superior del borde si querés un look más marcado (opcional):
+    // spr.drawRoundRect(0, 0, EYE_W, EYE_H, RADIUS, EYE_BORDER);
+  }
+}
+
+// Vuelca ambos ojos a la pantalla
+void pushEyes() {
+  leftEye.pushSprite(leftX, eyesY);
+  rightEye.pushSprite(rightX, eyesY);
+}
+
+// Llama para iniciar un parpadeo (cuando están abiertos)
+void startBlink() {
+  blinkState = CLOSING;
+  stateStartMs = millis();
+}
+
+// Actualiza la máquina de estados del parpadeo (sin delays)
+// Debe llamarse en loop()
+void updateBlink() {
+  unsigned long now = millis();
+  unsigned long elapsed = now - stateStartMs;
+
+  switch (blinkState) {
+    case OPEN:
+      // Espera hasta el próximo blink
+      if (now - lastUpdateMs >= BLINK_INTERVAL_MS) {
+        startBlink();
+      }
+      lidProgress = 0.0f;
+      break;
+
+    case CLOSING: {
+      // Avanza de 0 → 1 en CLOSE_TIME_MS (lineal)
+      float p = (float)elapsed / (float)CLOSE_TIME_MS;
+      if (p >= 1.0f) {
+        lidProgress = 1.0f;
+        blinkState = CLOSED;
+        stateStartMs = now;
+      } else {
+        lidProgress = p;
+      }
+    } break;
+
+    case CLOSED:
+      lidProgress = 1.0f;
+      if (elapsed >= CLOSED_HOLD_MS) {
+        blinkState = OPENING;
+        stateStartMs = now;
+      }
+      break;
+
+    case OPENING: {
+      // Vuelve de 1 → 0 en OPEN_TIME_MS (lineal)
+      float p = (float)elapsed / (float)OPEN_TIME_MS;
+      if (p >= 1.0f) {
+        lidProgress = 0.0f;
+        blinkState = OPEN;
+        stateStartMs = now;
+        lastUpdateMs = now; // reinicia intervalo
+      } else {
+        lidProgress = 1.0f - p;
+      }
+    } break;
   }
 
-  gfx->begin();
-  gfx->fillScreen(COLOR_FONDO);
+  // Redibujar sprites según progreso actual
+  renderEyeSprite(leftEye);
+  renderEyeSprite(rightEye);
+  pushEyes();
+}
 
-  // Ubica los ojos aproximadamente centrados horizontalmente con un pequeño espacio.
-  int16_t anchoPantalla = gfx->width();
-  int16_t altoPantalla = gfx->height();
-  int16_t desplazamientoOjoX = (ANCHO_OJO / 2) + ESPACIO_OJO;
+/// ---------- Init de ojos y posiciones ----------
+void initEyes() {
+  // Crear los sprites
+  leftEye.createSprite(EYE_W, EYE_H);
+  rightEye.createSprite(EYE_W, EYE_H);
 
-  ojoIzquierdo.centroX = (anchoPantalla / 2) - desplazamientoOjoX;
-  ojoDerecho.centroX = (anchoPantalla / 2) + desplazamientoOjoX;
-  ojoIzquierdo.centroY = ojoDerecho.centroY = altoPantalla / 2;
+  // Calcular posiciones centradas (pantalla 240x240 por defecto)
+  int W = tft.width();
+  int H = tft.height();
+  int totalWidth = (EYE_W * 2) + GAP;
+  int startX = (W - totalWidth) / 2;
+  int startY = (H - EYE_H) / 2;
 
-  dibujarOjos();
+  leftX  = startX;
+  rightX = startX + EYE_W + GAP;
+  eyesY  = startY;
+
+  // Estado inicial: ojos abiertos renderizados una vez
+  lidProgress = 0.0f;
+  renderEyeSprite(leftEye);
+  renderEyeSprite(rightEye);
+  tft.fillScreen(BG_COLOR);
+  pushEyes();
+
+  // Inicializa temporizadores
+  lastUpdateMs = millis();
+  stateStartMs = millis();
+  blinkState   = OPEN;
+}
+
+void setup() {
+  tft.init();
+  tft.setRotation(0);  // ajustá según tu montaje
+  tft.fillScreen(BG_COLOR);
+
+  initEyes();
 }
 
 void loop() {
-  // Los ojos permanecen fijos, sin animación.
-  delay(1000);
-}
-
-void dibujarOjos() {
-  gfx->startWrite();
-  dibujarOjo(ojoIzquierdo);
-  dibujarOjo(ojoDerecho);
-  gfx->endWrite();
-}
-
-void dibujarOjo(const Ojo &ojo) {
-  rellenarElipse(ojo.centroX, ojo.centroY, ANCHO_OJO, ALTO_OJO, COLOR_OJO);
-}
-
-void rellenarElipse(int16_t centroX, int16_t centroY, int16_t ancho, int16_t alto, uint16_t color) {
-  float radioX = ancho / 2.0f;
-  float radioY = alto / 2.0f;
-  float radioXCuadrado = radioX * radioX;
-  float radioYCuadrado = radioY * radioY;
-
-  for (int16_t y = -static_cast<int16_t>(radioY); y <= static_cast<int16_t>(radioY); ++y) {
-    float yNormalizado = static_cast<float>(y);
-    float termino = 1.0f - (yNormalizado * yNormalizado) / radioYCuadrado;
-    if (termino < 0.0f) {
-      continue;
-    }
-    float anchoLinea = sqrtf(termino * radioXCuadrado);
-    int16_t anchoLineaEntero = static_cast<int16_t>(anchoLinea + 0.5f);
-    gfx->drawFastHLine(centroX - anchoLineaEntero, centroY + y, anchoLineaEntero * 2, color);
-  }
+  updateBlink();  // parpadeo no bloqueante
 }
