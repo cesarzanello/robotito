@@ -6,8 +6,8 @@ TFT_eSPI tft = TFT_eSPI();
 // ===== Parámetros ojos =====
 const int EYE_W = 60;
 const int EYE_H_NORMAL = 80;
-const int EYE_H_SHRINK = 60;
-const int RADIUS = 10;
+const int EYE_H_SHRINK = 70;
+const int RADIUS = 15;
 const int GAP = 15;
 
 const uint16_t BG_COLOR = TFT_BLACK;
