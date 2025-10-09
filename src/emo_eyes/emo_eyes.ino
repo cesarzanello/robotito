@@ -52,6 +52,26 @@ const int STAGE_W = BASE_W + (MOVE_AMPLITUDE_X * 2) + PAD * 2; // 247
 const int STAGE_H = EYE_H_NORMAL + PAD * 2;                    // 92
 TFT_eSprite stage = TFT_eSprite(&tft);
 
+// ---- SLEEP: irse a dormir a los 25 s ----
+bool sleepActive = false;
+const unsigned long sleepAfterMs = 25000UL; // 25 s
+unsigned long bootMs = 0;                   // se setea en initScene()
+
+void enterSleep() {
+  sleepActive = true;
+  lidProgress = 0.95f;           // 95% cerrado
+  moveState = IDLE;              // congelar movimiento
+  nextMoveTriggerMs = millis() + 100000000UL;  // “patear” próximo movimiento
+  // si querés también pausar otras escenas, ya alcanza con el if del loop
+}
+
+void updateSleepScheduler() {
+  if (!sleepActive && (millis() - bootMs >= sleepAfterMs)) {
+    enterSleep();
+  }
+}
+
+
 // ===== Modo ENOJADO (se mantiene) =====
 const unsigned long ANGRY_DELAY_MS    = 5000;  // a los 5 s
 const unsigned long ANGRY_DURATION_MS = 2000;  // 2 s
@@ -213,12 +233,6 @@ void updateMove() {
       if (elapsed >= HOLD_TIME_MS) {
         moveState = MOVE_RIGHT_BACK; moveStateStartMs = now;
       }
-    } break;
-
-    case LEFT_HOLD:
-      moveOffsetX = -MOVE_AMPLITUDE_X;
-      leftEyeH = EYE_H_SHRINK;
-      if (elapsed >= HOLD_TIME_MS) { moveState = MOVE_LEFT_BACK; moveStateStartMs = now; }
       break;
 
     case MOVE_RIGHT_BACK: {
@@ -412,6 +426,7 @@ void initScene() {
   stage.createSprite(STAGE_W, STAGE_H);
 
   unsigned long now = millis();
+  bootMs = now; 
 
   // Parpadeo base
   blinkState = BOPEN;
@@ -447,16 +462,26 @@ void setup() {
 }
 
 void loop() {
-  // 1) Despertar primero
+  // 1) Programador de “sleep” a los 25 s
+  updateSleepScheduler();
+
+  // 2) Si está dormido, mantener ojos al 95% y no ejecutar más lógicas
+  if (sleepActive) {
+    // Ojos permanecen 95% cerrados (lidProgress ya está en 0.95)
+    renderScene();     // un solo push por frame (sin flicker)
+    return;            // no continuar con blink/move/otras escenas
+  }
+
+  // 3) Flujo normal si NO está dormido (tal como lo tenías)1|1
   if (wakeState != WAKE_DONE) {
     updateWakeSequence();
   } else {
-    // 2) Secuencias normales
-    updateAngry();     // puede pausar blink y risa
-    updateLaugh();     // risa se superpone (si no hay enojado)
-    updateBlink();     // pausado si angry o risa
-    updateMove();      // movimiento sigue normal
+    updateAngry();
+    updateLaugh();
+    updateBlink();
+    updateMove();
   }
 
-  renderScene();       // un solo push por frame (sin flicker)
+  renderScene();
 }
+
