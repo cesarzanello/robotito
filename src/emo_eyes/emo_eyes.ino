@@ -10,16 +10,15 @@ const int EYE_H_SHRINK = 70;
 const int RADIUS = 15;
 const int GAP = 15;
 
-const uint16_t BG_COLOR   = TFT_BLACK;
-const uint16_t EYE_FILL   = TFT_CYAN;
-
+const uint16_t BG_COLOR = TFT_BLACK;
+const uint16_t EYE_FILL = TFT_CYAN;
 
 // ===== Movimiento =====
-const int MOVE_AMPLITUDE_X = 50;            // tu valor actual
-const unsigned long MOVE_TIME_MS = 150;     // 150 ms por tramo
-const unsigned long HOLD_TIME_MS = 2000;    // 2 s en el extremo
+const int MOVE_AMPLITUDE_X = 50;
+const unsigned long MOVE_TIME_MS = 150;   // ida/vuelta
+const unsigned long HOLD_TIME_MS = 2000;  // espera en el extremo
 
-// ===== Parpadeo (tapas rectas al centro) =====
+// ===== Parpadeo normal (tapas rectas) =====
 enum BlinkState { BOPEN, BCLOSING, BCLOSED, BOPENING };
 BlinkState blinkState = BOPEN;
 unsigned long blinkStateStartMs = 0;
@@ -30,14 +29,13 @@ const unsigned long CLOSED_HOLD_MS =  60;
 const unsigned long OPEN_TIME_MS   = 120;
 float lidProgress = 0.0f;
 
-// ===== Movimiento con scheduler de 10 s =====
+// ===== Movimiento con periodo de 10 s =====
 enum MoveState {
   IDLE,
   MOVE_RIGHT_OUT, RIGHT_HOLD, MOVE_RIGHT_BACK,
   MOVE_LEFT_OUT,  LEFT_HOLD,  MOVE_LEFT_BACK
 };
 MoveState moveState = IDLE;
-
 unsigned long moveStateStartMs = 0;
 unsigned long nextMoveTriggerMs = 0;   // cada 10 s
 bool nextDirectionRight = true;
@@ -48,17 +46,34 @@ int rightEyeH = EYE_H_NORMAL;
 
 // ===== Canvas parcial 8-bit =====
 const int BASE_W = (EYE_W * 2) + GAP;   // 135
-const int PAD    = 6;                   // margen
-const int STAGE_W = BASE_W + (MOVE_AMPLITUDE_X * 2) + PAD * 2; // 135 + 100 + 12 = 247
-const int STAGE_H = EYE_H_NORMAL + PAD * 2;                    // 80 + 12 = 92
+const int PAD    = 6;
+const int STAGE_W = BASE_W + (MOVE_AMPLITUDE_X * 2) + PAD * 2; // 247
+const int STAGE_H = EYE_H_NORMAL + PAD * 2;                    // 92
 TFT_eSprite stage = TFT_eSprite(&tft);
 
-// ===== Modo ENOJADO (prueba) =====
-const unsigned long ANGRY_DELAY_MS    = 5000;  // se activa a los 5 s
-const unsigned long ANGRY_DURATION_MS = 2000;  // dura 2 s
+// ===== Modo ENOJADO (se mantiene) =====
+const unsigned long ANGRY_DELAY_MS    = 5000;  // a los 5 s
+const unsigned long ANGRY_DURATION_MS = 2000;  // 2 s
 bool angryActive  = false;
 bool angryPlayed  = false;
 unsigned long angryStartMs = 0;
+
+// ===== Secuencia de “despertar” (NUEVA, se agrega) =====
+enum WakeState {
+  ASLEEP_INIT, ASLEEP_HOLD,
+  WAKE_OPENING,
+  WAKE_BLINK1_CLOSE, WAKE_BLINK1_OPEN,
+  WAKE_BLINK2_CLOSE, WAKE_BLINK2_OPEN,
+  WAKE_DONE
+};
+WakeState wakeState = ASLEEP_INIT;
+
+unsigned long wakeStateStartMs = 0;
+const float   SLEEP_LID_LEVEL = 0.95f;     // 95% cerrado
+const unsigned long SLEEP_TIME_MS   = 3000; // 3 s dormido
+const unsigned long WAKE_OPEN_TIME_MS  = 180;
+const unsigned long WAKE_CLOSE_TIME_MS = 100;
+const unsigned long WAKE_OPEN2_TIME_MS = 120;
 
 // ---------- Utils ----------
 static inline float easeInOutQuad(float x) {
@@ -69,34 +84,26 @@ int lerpInt(int a, int b, float t) {
   if (t < 0) t = 0; if (t > 1) t = 1;
   return a + (int)((b - a) * t);
 }
+float clamp01(float v){ return v<0?0:(v>1?1:v); }
 
-// ---------- Dibujo de un ojo NORMAL (sin bordes, sin pupila) ----------
+// ---------- Ojo NORMAL (sin pupila) ----------
 void drawEyeNormal(int x, int y, int w, int h) {
   stage.fillRoundRect(x, y, w, h, RADIUS, EYE_FILL);
-
-  // parpado recto hacia el centro (si NO está enojado)
   int halfH = h / 2;
   int lidH  = (int)(lidProgress * halfH);
   if (lidH > 0) {
-    stage.fillRect(x, y, w, lidH, BG_COLOR);             // tapa superior
-    stage.fillRect(x, y + h - lidH, w, lidH, BG_COLOR);  // tapa inferior
+    stage.fillRect(x, y, w, lidH, BG_COLOR);             // tapa superior recta
+    stage.fillRect(x, y + h - lidH, w, lidH, BG_COLOR);  // tapa inferior recta
   }
 }
 
-// ---------- Dibujo de un ojo ENOJADO ----------
-/*
-   Idea: mantener el ojo cian y formar un “ceño”:
-   - Párpado superior DIAGONAL que baja hacia el centro (triángulo negro).
-   - Cejas rojas anguladas arriba del ojo.
-   - Sin parpadeo (ignora lidProgress) mientras está enojado.
-*/
+// ---------- Ojo ENOJADO (sin cejas rojas) ----------
 void drawEyeAngryLeft(int x, int y, int w, int h) {
   stage.fillRoundRect(x, y, w, h, RADIUS, EYE_FILL);
   int tilt = (int)(h * 0.35f);
   // lado interno = derecha
   stage.fillTriangle(x, y, x + w, y, x + w, y + tilt, BG_COLOR);
 }
-
 void drawEyeAngryRight(int x, int y, int w, int h) {
   stage.fillRoundRect(x, y, w, h, RADIUS, EYE_FILL);
   int tilt = (int)(h * 0.35f);
@@ -115,11 +122,9 @@ void renderScene() {
   int rightY = (STAGE_H - rightEyeH) / 2;
 
   if (angryActive) {
-    // OJOS ENOJADOS (sin parpadeo)
     drawEyeAngryLeft(baseLeftX,  leftY,  EYE_W, leftEyeH);
     drawEyeAngryRight(baseRightX, rightY, EYE_W, rightEyeH);
   } else {
-    // OJOS NORMALES con parpadeo
     drawEyeNormal(baseLeftX,  leftY,  EYE_W, leftEyeH);
     drawEyeNormal(baseRightX, rightY, EYE_W, rightEyeH);
   }
@@ -129,9 +134,9 @@ void renderScene() {
   stage.pushSprite(screenX, screenY);
 }
 
-// ---------- Parpadeo ----------
+// ---------- Parpadeo normal ----------
 void updateBlink() {
-  if (angryActive) return;  // suspender parpadeo mientras está enojado
+  if (angryActive) return;  // mientras está enojado, pausa parpadeo
 
   unsigned long now = millis();
   unsigned long elapsed = now - blinkStateStartMs;
@@ -193,7 +198,15 @@ void updateMove() {
     case RIGHT_HOLD:
       moveOffsetX = +MOVE_AMPLITUDE_X;
       rightEyeH = EYE_H_SHRINK;
-      if (elapsed >= HOLD_TIME_MS) { moveState = MOVE_RIGHT_BACK; moveStateStartMs = now; }
+      if (elapsed >= HOLD_TIME_MS) {
+        moveState = MOVE_RIGHT_BACK; moveStateStartMs = now;
+      }
+    } break;
+
+    case LEFT_HOLD:
+      moveOffsetX = -MOVE_AMPLITUDE_X;
+      leftEyeH = EYE_H_SHRINK;
+      if (elapsed >= HOLD_TIME_MS) { moveState = MOVE_LEFT_BACK; moveStateStartMs = now; }
       break;
 
     case MOVE_RIGHT_BACK: {
@@ -202,7 +215,7 @@ void updateMove() {
         moveOffsetX = 0;
         rightEyeH = EYE_H_NORMAL;
         nextDirectionRight = false;
-        nextMoveTriggerMs = now + 10000UL;  // próximo disparo en 10 s (izq)
+        nextMoveTriggerMs = now + 10000UL;  // próximo en 10 s (izq)
         moveState = IDLE; moveStateStartMs = now;
       } else {
         float e = easeInOutQuad(p);
@@ -229,7 +242,9 @@ void updateMove() {
     case LEFT_HOLD:
       moveOffsetX = -MOVE_AMPLITUDE_X;
       leftEyeH = EYE_H_SHRINK;
-      if (elapsed >= HOLD_TIME_MS) { moveState = MOVE_LEFT_BACK; moveStateStartMs = now; }
+      if (elapsed >= HOLD_TIME_MS) {
+        moveState = MOVE_LEFT_BACK; moveStateStartMs = now;
+      }
       break;
 
     case MOVE_LEFT_BACK: {
@@ -238,7 +253,7 @@ void updateMove() {
         moveOffsetX = 0;
         leftEyeH = EYE_H_NORMAL;
         nextDirectionRight = true;
-        nextMoveTriggerMs = now + 10000UL;  // próximo disparo en 10 s (der)
+        nextMoveTriggerMs = now + 10000UL;  // próximo en 10 s (der)
         moveState = IDLE; moveStateStartMs = now;
       } else {
         float e = easeInOutQuad(p);
@@ -249,7 +264,7 @@ void updateMove() {
   }
 }
 
-// ---------- Angry scheduler ----------
+// ---------- Angry scheduler (se mantiene) ----------
 void updateAngry() {
   unsigned long now = millis();
   if (!angryPlayed && !angryActive && now >= ANGRY_DELAY_MS) {
@@ -258,7 +273,77 @@ void updateAngry() {
   }
   if (angryActive && (now - angryStartMs >= ANGRY_DURATION_MS)) {
     angryActive = false;
-    angryPlayed = true; // se ejecuta solo una vez
+    angryPlayed = true; // una sola vez
+  }
+}
+
+// ---------- Wake sequence (NUEVO, se agrega) ----------
+void updateWakeSequence() {
+  unsigned long now = millis();
+  unsigned long elapsed = now - wakeStateStartMs;
+
+  switch (wakeState) {
+    case ASLEEP_INIT:
+      // Arranca dormido al 95%
+      lidProgress = SLEEP_LID_LEVEL;
+      // Pausar movimiento hasta terminar el wake
+      moveState = IDLE;
+      nextMoveTriggerMs = now + 100000000UL;
+      wakeState = ASLEEP_HOLD;
+      wakeStateStartMs = now;
+      break;
+
+    case ASLEEP_HOLD:
+      lidProgress = SLEEP_LID_LEVEL;
+      if (elapsed >= SLEEP_TIME_MS) {
+        wakeState = WAKE_OPENING; wakeStateStartMs = now;
+      }
+      break;
+
+    case WAKE_OPENING: {
+      float p = clamp01((float)elapsed / (float)WAKE_OPEN_TIME_MS);
+      lidProgress = (1.0f - p) * SLEEP_LID_LEVEL; // 0.95 -> 0
+      if (p >= 1.0f) { wakeState = WAKE_BLINK1_CLOSE; wakeStateStartMs = now; }
+    } break;
+
+    case WAKE_BLINK1_CLOSE: {
+      float p = clamp01((float)elapsed / (float)WAKE_CLOSE_TIME_MS);
+      lidProgress = p;
+      if (p >= 1.0f) { wakeState = WAKE_BLINK1_OPEN; wakeStateStartMs = now; }
+    } break;
+
+    case WAKE_BLINK1_OPEN: {
+      float p = clamp01((float)elapsed / (float)WAKE_OPEN2_TIME_MS);
+      lidProgress = 1.0f - p;
+      if (p >= 1.0f) { wakeState = WAKE_BLINK2_CLOSE; wakeStateStartMs = now; }
+    } break;
+
+    case WAKE_BLINK2_CLOSE: {
+      float p = clamp01((float)elapsed / (float)WAKE_CLOSE_TIME_MS);
+      lidProgress = p;
+      if (p >= 1.0f) { wakeState = WAKE_BLINK2_OPEN; wakeStateStartMs = now; }
+    } break;
+
+    case WAKE_BLINK2_OPEN: {
+      float p = clamp01((float)elapsed / (float)WAKE_OPEN2_TIME_MS);
+      lidProgress = 1.0f - p;
+      if (p >= 1.0f) {
+        // listo: habilitar parpadeo normal y programar movimiento
+        blinkState = BOPEN;
+        blinkStateStartMs = now;
+        lastBlinkIntervalStart = now;
+
+        nextDirectionRight = true;
+        nextMoveTriggerMs = now + 10000UL; // primer movimiento en 10 s
+        moveState = IDLE;
+
+        wakeState = WAKE_DONE; wakeStateStartMs = now;
+      }
+    } break;
+
+    case WAKE_DONE:
+      // nada: deja que blink/move/angry sigan
+      break;
   }
 }
 
@@ -271,22 +356,25 @@ void initScene() {
 
   unsigned long now = millis();
 
-  // Parpadeo
+  // Parpadeo base
   blinkState = BOPEN;
   blinkStateStartMs = now;
   lastBlinkIntervalStart = now;
 
-  // Movimiento (primer disparo en 10 s a la derecha)
+  // Movimiento (lo posponemos hasta finalizar wake)
   moveState = IDLE;
   moveStateStartMs = now;
   nextDirectionRight = true;
-  nextMoveTriggerMs = now + 10000UL;
+  nextMoveTriggerMs = now + 100000000UL;
 
-  // Angry
+  // Angry (se mantiene)
   angryActive = false;
   angryPlayed = false;
 
-  // Primer frame
+  // Wake (nuevo)
+  wakeState = ASLEEP_INIT;
+  wakeStateStartMs = now;
+
   renderScene();
 }
 
@@ -297,8 +385,18 @@ void setup() {
 }
 
 void loop() {
+  // Primero la secuencia de despertar (NUEVA)
+  if (wakeState != WAKE_DONE) {
+    updateWakeSequence();
+  } else {
+    // Parpadeo y movimiento normales
+    updateBlink();
+    updateMove();
+  }
+
+  // Angry corre SIEMPRE (se superpone; pausa blink cuando activo)
   updateAngry();
-  updateBlink();   // ignorado automáticamente si angryActive
-  updateMove();
-  renderScene();   // un solo push por frame
+
+  // Un solo push por frame
+  renderScene();
 }
