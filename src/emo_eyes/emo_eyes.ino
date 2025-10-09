@@ -201,6 +201,12 @@ void updateMove() {
       if (elapsed >= HOLD_TIME_MS) {
         moveState = MOVE_RIGHT_BACK; moveStateStartMs = now;
       }
+    } break;
+
+    case LEFT_HOLD:
+      moveOffsetX = -MOVE_AMPLITUDE_X;
+      leftEyeH = EYE_H_SHRINK;
+      if (elapsed >= HOLD_TIME_MS) { moveState = MOVE_LEFT_BACK; moveStateStartMs = now; }
       break;
 
     case MOVE_RIGHT_BACK: {
