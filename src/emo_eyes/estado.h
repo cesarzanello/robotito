@@ -9,21 +9,16 @@ extern TFT_eSprite stage;
 // Escenas lógicas + modos de render que usamos en el motor
 enum Escena {
   ESCENA_NINGUNA = 0,
-
-  // Escenas lógicas
-  ESCENA_PRE_DORMIR,   // (fusión pre-sueño + dormido, secuencia larga)
-  ESCENA_DESPERTAR,    // secuencia de despertar
-  ESCENA_NORMAL,       // normal con blink y movimientos
+  ESCENA_PRE_DORMIR,     // (única escena de dormir)
+  ESCENA_DESPERTAR,
+  ESCENA_NORMAL,
   ESCENA_ENOJADO,
   ESCENA_FELIZ,
   ESCENA_TRISTE,
   ESCENA_RISA,
-
-  // Modos de render auxiliares que seguimos usando para dibujar
-  ESCENA_DORMIDO,      // ojos 95% cerrados (render)
-  ESCENA_PRE_SUENO,    // forma de bostezo (render)
-  ESCENA_DESPERTAR_RENDER // frame de despertar (si lo querés distinguir)
+  ESCENA_DESPERTAR_RENDER
 };
+
 
 // Direcciones de movimiento
 enum Direccion {
@@ -46,6 +41,9 @@ struct EstadoOjos {
   int laughOffsetY = 0;
 
   Direccion direccion = DIR_NEUTRO;
+
+  bool dormirBostezoFrame = false;
+  bool dormirZzzActivo    = false;
 };
 
 void inicializarEstado(EstadoOjos& est);

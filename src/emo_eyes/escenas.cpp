@@ -1,5 +1,7 @@
 #include "escenas.h"
 #include "funciones.h"
+#include "secuencias.h"
+
 
 void renderEscenaActual(EstadoOjos& est) {
   // Si no hay nada para dibujar, salgo
@@ -41,23 +43,29 @@ void renderEscenaActual(EstadoOjos& est) {
       dibujarOjoNormal(baseRightX, rightY, EYE_W, est.rightEyeH, est.lidProgress);
       break;
 
-    case ESCENA_PRE_SUENO:    // <- único caso para "bostezo"
-      dibujarOjoBostezoIzq(baseLeftX,  leftY,  EYE_W, est.leftEyeH);
-      dibujarOjoBostezoDer(baseRightX, rightY, EYE_W, est.rightEyeH);
-      break;
-
-    case ESCENA_DORMIDO:
-      // ojos cerrados ~95%
-      dibujarOjoNormal(baseLeftX,  leftY,  EYE_W, est.leftEyeH,  est.lidProgress);
-      dibujarOjoNormal(baseRightX, rightY, EYE_W, est.rightEyeH, est.lidProgress);
-      break;
-
     case ESCENA_DESPERTAR:
     case ESCENA_DESPERTAR_RENDER:
       // si usás un frame de despertar, podés dibujar igual que normal
       dibujarOjoNormal(baseLeftX,  leftY,  EYE_W, est.leftEyeH,  est.lidProgress);
       dibujarOjoNormal(baseRightX, rightY, EYE_W, est.rightEyeH, est.lidProgress);
       break;
+    case ESCENA_PRE_DORMIR: {
+      if (est.dormirBostezoFrame) {
+        // frame de bostezo
+        dibujarOjoBostezoIzq(baseLeftX,  leftY,  EYE_W, est.leftEyeH);
+        dibujarOjoBostezoDer(baseRightX, rightY, EYE_W, est.rightEyeH);
+      } else {
+        // resto de fases (parpadeos, 1/2 abierto, cierre lento, cerrado final)
+        dibujarOjoNormal(baseLeftX,  leftY,  EYE_W, est.leftEyeH,  est.lidProgress);
+        dibujarOjoNormal(baseRightX, rightY, EYE_W, est.rightEyeH, est.lidProgress);
+      }
+
+      // Zzz sólo cuando terminó de cerrar (flag seteado al final de la secuencia)
+      if (est.dormirZzzActivo) {
+        zzz_render();
+      }
+    } break;
+
 
     case ESCENA_NINGUNA:
     default:

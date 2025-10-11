@@ -12,3 +12,8 @@ void escenas_update(EstadoOjos& est, unsigned long now);
 
 // Escena actual
 Escena escenas_actual();
+
+// Zzz: se actualizan por tiempo y se dibujan encima del sprite
+void zzz_update(unsigned long now, bool activo); // activo=true solo en DORMIDO
+void zzz_render();                               // se llama desde render
+

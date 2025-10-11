@@ -63,3 +63,13 @@ static const int   LDR_UMBRAL_CLARO    = 2600;
 static const unsigned long LUZ_RETRASO_ENCENDER_MS = 3000; // luz se prende
 static const unsigned long LUZ_RETRASO_APAGAR_MS   = 3000; // luz se apaga
 
+// ===== Zzz (solo en DORMIDO) =====
+static const int   ZZZ_MAX               = 6;      // cuántas a la vez
+static const unsigned long ZZZ_SPAWN_MS  = 700;    // cada cuánto nace una
+static const unsigned long ZZZ_LIFE_MS   = 2500;   // vida útil de cada Z
+static const float ZZZ_SPEED_PX_S        = 28.0f;  // velocidad vertical (px/s, hacia arriba)
+static const float ZZZ_DRIFT_PX_S        = 8.0f;   // deriva horizontal ± (px/s)
+static const int   ZZZ_MIN_SIZE          = 1;      // setTextSize()
+static const int   ZZZ_MAX_SIZE          = 2;      // setTextSize()
+
+
