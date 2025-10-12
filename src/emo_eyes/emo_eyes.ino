@@ -31,13 +31,15 @@ void setup() {
   renderEscenaActual(ESTADO);          // dibuja un frame ya mismo
   pinMode(PIN_TOUCH_ENOJO, INPUT_PULLUP);
   pinMode(PIN_TOUCH_RISA, INPUT_PULLUP);
+  pinMode(PIN_TOUCH_FELIZ, INPUT_PULLUP);
 // Calibración touch (sin tocar el pad)
             // mini warm-up del periférico touch
 
   // (opcional) debug
   // Serial.begin(115200);
   // Serial.print("Touch baseline = "); Serial.println(g_touchBaseline);
-
+dht.begin();
+ Serial.println("Prueba DHT – leyendo cada 2s...");
 }
 
 
@@ -92,6 +94,36 @@ bool lecturaEnojo = digitalRead(PIN_TOUCH_ENOJO);
   }
   bool touchEnojoPresionado = (touchEnojoEstable == HIGH);  
 
+
+
+  // ===== TOUCH FELIZ (simple, con umbral fijo y debounce) =====
+static bool touchFelizEstable = true;            // HIGH = sin toque, LOW = tocado
+static bool touchFelizLeyendo = true;            // lectura cruda anterior
+static unsigned long touchTsCambioFeliz = 0;
+bool lecturaFeliz = digitalRead(PIN_TOUCH_FELIZ);
+
+ if (lecturaFeliz != touchFelizLeyendo) {
+    touchFelizLeyendo = lecturaFeliz;
+    touchTsCambioFeliz = now;
+  } else if ((now - touchTsCambioEnojo) >= TOUCH_DEBOUNCE_MS && lecturaFeliz != touchFelizEstable) {
+    // Cambio ESTABLE (debounced)
+    touchFelizEstable = lecturaFeliz;
+
+    if (touchFelizEstable == LOW) { // TOCADO → ENOJADO
+      // no tocamos tu lógica: disparamos igual que con el botón
+      Escena e = escenas_actual();
+      if (e == ESCENA_NORMAL || e == ESCENA_ENOJADO || e == ESCENA_TRISTE || e == ESCENA_RISA) {
+        escenas_set(ESCENA_FELIZ, ESTADO);
+      }
+      // si querés “mientras esté tocado está enojado”, re-llamá escenas_set(ESCENA_ENOJADO, ESTADO) cada loop
+    } else { // SUELTO → volver a NORMAL si estabas en ENOJADO
+      if (escenas_actual() == ESCENA_FELIZ) {
+        escenas_set(ESCENA_NORMAL, ESTADO);
+      }
+    }
+  }
+  bool touchFelizPresionado = (touchFelizEstable == HIGH);  
+
 // ===== TOUCH RISA (simple, con umbral fijo y debounce) =====
 static bool touchRisaEstable = true;            // HIGH = sin toque, LOW = tocado
 static bool touchRisaLeyendo = true;            // lectura cruda anterior
@@ -134,7 +166,7 @@ bool lecturaRisa = digitalRead(PIN_TOUCH_RISA);
   static unsigned long tsCambioLuz = 0;
 
   // ======= FIX #3: solo correr LDR si NO hay toque y NO hay emoción =======
-  if ((!touchEnojoPresionado || !touchRisaPresionado) && !enEmocion) {
+  if ((!touchEnojoPresionado || !touchRisaPresionado || !touchFelizPresionado) && !enEmocion) {
     int  crudoLdr   = ldr_leer_crudo();
     bool estaClaro  = ldr_es_claro(crudoLdr);
 
@@ -164,4 +196,6 @@ bool lecturaRisa = digitalRead(PIN_TOUCH_RISA);
   renderEscenaActual(ESTADO);
 
   delay(5);
+
+  
 }

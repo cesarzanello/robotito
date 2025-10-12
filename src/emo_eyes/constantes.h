@@ -78,6 +78,7 @@ static const unsigned long TOUCH_DEBOUNCE_MS = 30;
 
 // --- Botón Risa---
 static const int  PIN_TOUCH_RISA     = 35;   // T8
+static const int  PIN_TOUCH_FELIZ     = 25;   // T8
 
 
 
