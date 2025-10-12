@@ -44,6 +44,13 @@ struct EstadoOjos {
 
   bool dormirBostezoFrame = false;
   bool dormirZzzActivo    = false;
+
+  unsigned long risaStartMs = 0;
+  int risaDX = 0;
+  int risaDY = 0;
 };
+// en la struct EstadoOjos:
+
+
 
 void inicializarEstado(EstadoOjos& est);
