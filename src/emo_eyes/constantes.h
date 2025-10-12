@@ -72,4 +72,13 @@ static const float ZZZ_DRIFT_PX_S        = 8.0f;   // deriva horizontal ± (px/s
 static const int   ZZZ_MIN_SIZE          = 1;      // setTextSize()
 static const int   ZZZ_MAX_SIZE          = 2;      // setTextSize()
 
+// --- Botón enojo ---
+static const int  PIN_TOUCH_ENOJO     = 33;   // T8
+static const unsigned long TOUCH_DEBOUNCE_MS = 30;
+
+// --- Botón Risa---
+static const int  PIN_TOUCH_RISA     = 35;   // T8
+
+
+
 

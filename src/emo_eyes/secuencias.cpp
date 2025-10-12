@@ -398,22 +398,51 @@ void escenas_update(EstadoOjos& est, unsigned long now) {
     } break;
 
     // ----------------- EMOCIONES (3s) -----------------
+    // ----------------- EMOCIONES (3s) -----------------
     case ESCENA_ENOJADO:
     case ESCENA_FELIZ:
-    case ESCENA_TRISTE:
-    case ESCENA_RISA: {
+    case ESCENA_TRISTE: {
       if (now - emotionStart >= EMOTION_DURATION_MS) {
         escenas_set(ESCENA_NORMAL, est);
       }
-      // Opcional: blink también en emociones:
+      // Si querés blink en estas, podés activar:
       // blink_tick(est, now, true, BLINK_INTERVAL_MS);
-      // zzz_update(now, false);
     } break;
 
-    case ESCENA_NINGUNA:
-    default:
-      // nada
-      break;
+    case ESCENA_RISA: {
+      unsigned long t = now - emotionStart;
+
+      // 1) Fin a los 3 s → volver a normal y limpiar offsets
+      if (t >= EMOTION_DURATION_MS) {
+        est.lidProgress = 0.0f;                   // ojos abiertos
+        est.moveOffsetX = 0;                      // sin shake
+        est.leftEyeH = est.rightEyeH = EYE_H_NORMAL;
+        escenas_set(ESCENA_NORMAL, est);
+        break;
+      }
+
+      // 2) Micro-parpadeo “risa”
+      //    ciclo ~125ms; lidProgress oscila 0..0.6 (semi-cerrado rápido)
+      float fase = (t % 125UL) / 125.0f;
+      float sBlink = (sinf(fase * 2.0f * 3.1415926f) * 0.5f + 0.5f);  // 0..1
+      est.lidProgress = 0.6f * sBlink;
+
+      // 3) Shake horizontal + leve vertical “natural”
+      //    amplitud pequeña: ±5 px X, ±3 px Y simulados con altura de ojos
+      float sx = sinf(t / 80.0f);    // más rápido en X
+      float sy = sinf(t / 110.0f);   // más lento en “Y”
+
+      est.moveOffsetX = (int)(5.0f * sx);   // usa el offset X existente del render
+
+      // simulamos una mini vibración vertical achicando/agrandando un ojo sutilmente
+      // (si no te gusta, podés borrar estas dos líneas)
+      est.leftEyeH  = EYE_H_NORMAL - (int)(3.0f * sy);
+      est.rightEyeH = EYE_H_NORMAL + (int)(3.0f * sy);
+
+      // NOTA: No llamamos a blink_tick aquí para que no pise el micro-parpadeo.
+      //       El render usa la forma “normal” para RISA, pero con estos offsets.
+    } break;
+
   }
 }
 
