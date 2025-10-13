@@ -32,14 +32,6 @@ void setup() {
   pinMode(PIN_TOUCH_ENOJO, INPUT_PULLUP);
   pinMode(PIN_TOUCH_RISA, INPUT_PULLUP);
   pinMode(PIN_TOUCH_FELIZ, INPUT_PULLUP);
-// Calibración touch (sin tocar el pad)
-            // mini warm-up del periférico touch
-
-  // (opcional) debug
-  // Serial.begin(115200);
-  // Serial.print("Touch baseline = "); Serial.println(g_touchBaseline);
-dht.begin();
- Serial.println("Prueba DHT – leyendo cada 2s...");
 }
 
 
