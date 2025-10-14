@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "sensores.h"
 #include "constantes.h"
+#include <ESP32Servo.h>
 
 void sensores_inicializar() {
   // Configura resolución y atenuación del ADC del ESP32
@@ -36,3 +37,56 @@ int ldr_claridad_0a100(int lectura_cruda) {
 bool ldr_es_claro(int lectura_cruda) {
   return lectura_cruda >= LDR_UMBRAL_CLARO;
 }
+
+
+
+static Servo g_servo;
+static bool  g_attached = false;
+static float g_currentAngle = SERVO_CENTER_DEG;
+
+// pequeño filtro para suavizar (0..1)
+static inline float slerp(float a, float b, float t){ return a + (b-a)*t; }
+
+void servo_init() {
+   Serial.println("[SERVO] init");
+  // La lib necesita reservar timers
+  ESP32PWM::allocateTimer(0);
+  ESP32PWM::allocateTimer(1);
+  ESP32PWM::allocateTimer(2);
+  ESP32PWM::allocateTimer(3);
+
+  g_servo.setPeriodHertz(50); // servos a 50 Hz
+  if (g_servo.attach(SERVO_PIN, SERVO_MIN_US, SERVO_MAX_US)) {
+    g_attached = true;
+    g_currentAngle = SERVO_CENTER_DEG;
+    g_servo.write((int)g_currentAngle);
+  }
+}
+
+void servo_update_from_offset(int moveOffsetX) {
+  if (!g_attached) return;
+
+  // mapear -MOVE_AMPLITUDE_X..+MOVE_AMPLITUDE_X -> SERVO_RIGHT_DEG..SERVO_LEFT_DEG
+  // (cuando moveOffsetX es +, estás mirando a la derecha en tu lógica? ajusta si está invertido)
+  long inMin  = -(long)MOVE_AMPLITUDE_X;
+  long inMax  = +(long)MOVE_AMPLITUDE_X;
+  long outMin = SERVO_RIGHT_DEG;
+  long outMax = SERVO_LEFT_DEG;
+
+  // map lineal estilo Arduino map(), pero protegido
+  float norm = 0.0f;
+  if (inMax != inMin) norm = (float)(moveOffsetX - inMin) / (float)(inMax - inMin);
+  if (norm < 0) norm = 0; if (norm > 1) norm = 1;
+  float target = outMin + norm * (outMax - outMin);
+
+  // suavizado (subí/bajá 0.25 para cambiar “inercia”)
+  g_currentAngle = slerp(g_currentAngle, target, 0.25f);
+  g_servo.write((int)(g_currentAngle + 0.5f));
+}
+
+void servo_center() {
+  if (!g_attached) return;
+  g_currentAngle = slerp(g_currentAngle, (float)SERVO_CENTER_DEG, 0.15f);
+  g_servo.write((int)(g_currentAngle + 0.5f));
+}
+

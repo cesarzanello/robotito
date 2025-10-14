@@ -4,6 +4,7 @@
 #include "funciones.h"     // clamp01, easeInOutQuad, lerpInt
 #include "escenas.h"       // render helpers (formas de ojos)
 #include "ejecuciones.h"
+#include "sensores.h"
 
 // =====================================================
 //                ESTADO INTERNO DEL MOTOR
@@ -444,6 +445,12 @@ void escenas_update(EstadoOjos& est, unsigned long now) {
     } break;
 
   }
+  if (escenaActual == ESCENA_NORMAL || escenaActual == ESCENA_RISA ) {
+    servo_update_from_offset(est.moveOffsetX);
+  } else {
+    servo_center();
+  }
+
 }
 
 // =====================================================

@@ -1,6 +1,5 @@
 #include <TFT_eSPI.h>
 #include <SPI.h>
-
 #include "constantes.h"
 #include "estado.h"
 #include "funciones.h"
@@ -19,7 +18,9 @@ void setup() {
   tft.init();
   tft.setRotation(0);
   tft.fillScreen(BG_COLOR);
-
+  
+  servo_init();
+  
   stage.setColorDepth(8);
   stage.createSprite(STAGE_W, STAGE_H);
 
@@ -32,6 +33,7 @@ void setup() {
   pinMode(PIN_TOUCH_ENOJO, INPUT_PULLUP);
   pinMode(PIN_TOUCH_RISA, INPUT_PULLUP);
   pinMode(PIN_TOUCH_FELIZ, INPUT_PULLUP);
+  
 }
 
 

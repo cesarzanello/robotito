@@ -80,6 +80,14 @@ static const unsigned long TOUCH_DEBOUNCE_MS = 30;
 static const int  PIN_TOUCH_RISA     = 35;   // T8
 static const int  PIN_TOUCH_FELIZ     = 25;   // T8
 
+// --- SERVO (ESP32 + ESP32Servo) ---
+static const int  SERVO_PIN        = 14;   // pin señal del servo (PWM)
+static const int  SERVO_MIN_US     = 500;  // pulso mínimo (us)
+static const int  SERVO_MAX_US     = 2500; // pulso máximo (us)
 
+// Ángulos de trabajo (ajustá si tu mecánica lo pide)
+static const int  SERVO_RIGHT_DEG  = 45;   // ojo mira derecha -> ángulo mínimo
+static const int  SERVO_CENTER_DEG = 90;   // centro
+static const int  SERVO_LEFT_DEG   = 135;  // ojo mira izquierda -> ángulo máximo
 
 
