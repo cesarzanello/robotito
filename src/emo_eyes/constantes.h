@@ -1,5 +1,6 @@
 #pragma once
 #include <TFT_eSPI.h>
+ 
 
 // ===== Colores =====
 static const uint16_t BG_COLOR  = TFT_BLACK;
@@ -80,6 +81,36 @@ static const unsigned long TOUCH_DEBOUNCE_MS = 30;
 static const int  PIN_TOUCH_RISA     = 35;   // T8
 static const int  PIN_TOUCH_FELIZ     = 25;   // T8
 
+// --- SERVO (ESP32 + ESP32Servo) ---
+static const int  SERVO_PIN        = 26;   // pin señal del servo (PWM)
+static const int  SERVO_MIN_US     = 500;  // pulso mínimo (us)
+static const int  SERVO_MAX_US     = 2500; // pulso máximo (us)
 
+// Ángulos de trabajo (ajustá si tu mecánica lo pide)
+static const int  SERVO_RIGHT_DEG  = 45;   // ojo mira derecha -> ángulo mínimo
+static const int  SERVO_CENTER_DEG = 90;   // centro
+static const int  SERVO_LEFT_DEG   = 135;  // ojo mira izquierda -> ángulo máximo
 
+// --- DHT11 ---
+static const int  DHT_PIN            = 27;      // ya lo probaste en 27
+static const int  DHT_TYPE_IS_DHT11  = 1;       // solo informativo
+static const unsigned long DHT_PERIOD_MS = 2000;
+
+// Umbrales de escena por temperatura
+static const float TEMP_FRIO_C   = 10.0f;
+static const float TEMP_CALOR_C  = 29.0f;
+
+// Paletas / efectos
+static const uint16_t EYE_FILL_COLD  = TFT_CYAN;
+static const uint16_t EYE_FILL_HOT   = TFT_YELLOW;  // podés usar TFT_ORANGE
+static const uint16_t ICE_COLOR      = TFT_WHITE;
+static const uint16_t HEAT_COLOR_1   = TFT_RED;
+static const uint16_t HEAT_COLOR_2   = 0xF800;      // rojo fuerte (565)
+
+// Efectos
+static const float HEAT_LID_OFFSET   = 0.15f;  // “párpado caído” base
+static const int   COLD_SHAKE_X      = 2;      // tiritón leve
+static const int   COLD_SHAKE_Y      = 1;
+static const int   SWEAT_MAX         = 4;      // gotas simultáneas
+static const unsigned long SWEAT_SPAWN_MS = 450;
 

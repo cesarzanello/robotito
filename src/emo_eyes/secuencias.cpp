@@ -4,6 +4,7 @@
 #include "funciones.h"     // clamp01, easeInOutQuad, lerpInt
 #include "escenas.h"       // render helpers (formas de ojos)
 #include "ejecuciones.h"
+#include "sensores.h"
 
 // =====================================================
 //                ESTADO INTERNO DEL MOTOR
@@ -194,6 +195,20 @@ void escenas_set(Escena nueva, EstadoOjos& est) {
                          : (nueva == ESCENA_TRISTE) ? ESCENA_TRISTE
                          : ESCENA_RISA;
       break;
+      
+    case ESCENA_FRIO:
+      normal_reset(now);
+      est.escenaActual = ESCENA_FRIO;
+      est.efectoFrio   = true;
+      est.efectoCalor  = false;
+      break;
+
+    case ESCENA_CALOR:
+      normal_reset(now);
+      est.escenaActual = ESCENA_CALOR;
+      est.efectoFrio   = false;
+      est.efectoCalor  = true;
+      break;
 
     default: break;
   }
@@ -205,6 +220,38 @@ Escena escenas_actual() { return escenaActual; }
 //                        UPDATE
 // =====================================================
 void escenas_update(EstadoOjos& est, unsigned long now) {
+
+  // helper interno: reproduce el comportamiento de NORMAL (blink+move)
+  auto do_normal_logic = [&](EstadoOjos& est, unsigned long now){
+    // Blink cada 3s
+    blink_tick(est, now, true, BLINK_INTERVAL_MS);
+    // Movimiento alterno (tu switch moveState tal cual)
+    switch (moveState) {
+      case MV_IDLE: if (now >= nextMoveAt) { moveState = MV_OUT; moveStart = now; est.leftEyeH = est.rightEyeH = EYE_H_NORMAL; } break;
+      case MV_OUT: { float p = clamp01((float)(now - moveStart) / MOVE_OUT_MS);
+        float e = easeInOutQuad(p); int amp = (int)(MOVE_AMPLITUDE_X * e);
+        est.moveOffsetX = moveRightNext ? +amp : -amp;
+        if (moveRightNext) { est.rightEyeH = lerpInt(EYE_H_NORMAL, EYE_H_SHRINK, e); est.leftEyeH  = EYE_H_NORMAL; }
+        else               { est.leftEyeH  = lerpInt(EYE_H_NORMAL, EYE_H_SHRINK, e); est.rightEyeH = EYE_H_NORMAL; }
+        if (p >= 1.0f) { moveState = MV_HOLD; moveStart = now; est.moveOffsetX = moveRightNext ? +MOVE_AMPLITUDE_X : -MOVE_AMPLITUDE_X;
+          if (moveRightNext) est.rightEyeH = EYE_H_SHRINK; else est.leftEyeH = EYE_H_SHRINK; }
+      } break;
+      case MV_HOLD:
+        est.moveOffsetX = moveRightNext ? +MOVE_AMPLITUDE_X : -MOVE_AMPLITUDE_X;
+        if (moveRightNext) { est.rightEyeH = EYE_H_SHRINK; est.leftEyeH = EYE_H_NORMAL; }
+        else               { est.leftEyeH  = EYE_H_SHRINK; est.rightEyeH= EYE_H_NORMAL; }
+        if (now - moveStart >= MOVE_HOLD_MS) { moveState = MV_BACK; moveStart = now; }
+        break;
+      case MV_BACK: { float p = clamp01((float)(now - moveStart) / MOVE_BACK_MS);
+        float e = easeInOutQuad(p); int amp = MOVE_AMPLITUDE_X - (int)(MOVE_AMPLITUDE_X * e);
+        est.moveOffsetX = moveRightNext ? +amp : -amp;
+        if (moveRightNext) est.rightEyeH = lerpInt(EYE_H_SHRINK, EYE_H_NORMAL, e);
+        else               est.leftEyeH  = lerpInt(EYE_H_SHRINK, EYE_H_NORMAL, e);
+        if (p >= 1.0f) { est.moveOffsetX = 0; est.leftEyeH = est.rightEyeH = EYE_H_NORMAL; moveState = MV_IDLE; moveRightNext = !moveRightNext; nextMoveAt = now + NORMAL_MOVE_PERIOD_MS; }
+      } break;
+    }
+  };
+
   switch (escenaActual) {
 
     // ----------------- DORMIR (única) -----------------
@@ -443,6 +490,34 @@ void escenas_update(EstadoOjos& est, unsigned long now) {
       //       El render usa la forma “normal” para RISA, pero con estos offsets.
     } break;
 
+    // ----------------- NUEVO: FRÍO -----------------
+    case ESCENA_FRIO: {
+      do_normal_logic(est, now);
+      // tiritón leve (sin romper movimiento)
+      est.moveOffsetX += (int)(COLD_SHAKE_X * sinf(now * 0.050f));
+      // un poquitín de jitter vertical si querés
+      // (si usás laughOffsetY en tu render, podés tocarlo también)
+      est.escenaActual = ESCENA_FRIO;
+    } break;
+
+    // ----------------- NUEVO: CALOR -----------------
+    case ESCENA_CALOR: {
+      do_normal_logic(est, now);
+      // párpado algo caído aun cuando parpadeo esté abierto
+      if (est.lidProgress < HEAT_LID_OFFSET) est.lidProgress = HEAT_LID_OFFSET;
+      est.escenaActual = ESCENA_CALOR;
+    } break;
+
+  }
+
+  if (escenas_actual() == ESCENA_NORMAL || escenas_actual() == ESCENA_RISA || escenas_actual() == ESCENA_CALOR || escenas_actual() == ESCENA_FRIO) {
+    int movimiento = est.moveOffsetX;
+    if (escenas_actual() == ESCENA_RISA){
+      movimiento = movimiento * 5;
+    }
+    servo_update_from_offset(movimiento);
+  } else {
+    servo_center();
   }
 }
 
