@@ -16,7 +16,9 @@ enum Escena {
   ESCENA_FELIZ,
   ESCENA_TRISTE,
   ESCENA_RISA,
-  ESCENA_DESPERTAR_RENDER
+  ESCENA_DESPERTAR_RENDER,
+  ESCENA_FRIO,     // <-- nuevo
+  ESCENA_CALOR 
 };
 
 
@@ -48,6 +50,10 @@ struct EstadoOjos {
   unsigned long risaStartMs = 0;
   int risaDX = 0;
   int risaDY = 0;
+
+    // efectos clima
+  bool efectoFrio = false;
+  bool efectoCalor = false;
 };
 // en la struct EstadoOjos:
 

@@ -7,6 +7,9 @@
 #include "ejecuciones.h"
 #include "sensores.h"
 #include "secuencias.h"
+#include <ESP32Servo.h>
+
+
 
 TFT_eSPI tft = TFT_eSPI();
 TFT_eSprite stage = TFT_eSprite(&tft);
@@ -19,21 +22,25 @@ void setup() {
   tft.setRotation(0);
   tft.fillScreen(BG_COLOR);
   
-  servo_init();
+  
   
   stage.setColorDepth(8);
   stage.createSprite(STAGE_W, STAGE_H);
 
   inicializarEstado(ESTADO);
   sensores_inicializar();
-
+  servo_init(); 
   escenas_init(ESTADO); // <- nombre correcto
   escenas_set(ESCENA_DESPERTAR, ESTADO);  // fuerza escena inicial visible
   renderEscenaActual(ESTADO);          // dibuja un frame ya mismo
   pinMode(PIN_TOUCH_ENOJO, INPUT_PULLUP);
   pinMode(PIN_TOUCH_RISA, INPUT_PULLUP);
   pinMode(PIN_TOUCH_FELIZ, INPUT_PULLUP);
-  
+  dht_init();
+
+
+
+
 }
 
 
@@ -43,7 +50,8 @@ void loop() {
   // ====== TRACK DE ESCENA PARA DEBUG ======
   static Escena escenaPrev = ESCENA_NINGUNA;
   Escena escena = escenas_actual();
-  bool enEmocion = (escena == ESCENA_ENOJADO || escena == ESCENA_FELIZ || escena == ESCENA_TRISTE || escena == ESCENA_RISA);
+  
+  bool enEmocion = (escena == ESCENA_ENOJADO || escena == ESCENA_FELIZ || escena == ESCENA_TRISTE || escena == ESCENA_RISA || escena == ESCENA_FRIO || escena == ESCENA_CALOR);
 
   if (escena != escenaPrev) {
     escenaPrev = escena;
@@ -76,7 +84,7 @@ bool lecturaEnojo = digitalRead(PIN_TOUCH_ENOJO);
     if (touchEnojoEstable == LOW) { // TOCADO → ENOJADO
       // no tocamos tu lógica: disparamos igual que con el botón
       Escena e = escenas_actual();
-      if (e == ESCENA_NORMAL || e == ESCENA_FELIZ || e == ESCENA_TRISTE || e == ESCENA_RISA) {
+      if (e == ESCENA_NORMAL || e == ESCENA_FELIZ || e == ESCENA_TRISTE || e == ESCENA_RISA || e == ESCENA_FRIO || e == ESCENA_CALOR) {
         escenas_set(ESCENA_ENOJADO, ESTADO);
       }
       // si querés “mientras esté tocado está enojado”, re-llamá escenas_set(ESCENA_ENOJADO, ESTADO) cada loop
@@ -106,7 +114,7 @@ bool lecturaFeliz = digitalRead(PIN_TOUCH_FELIZ);
     if (touchFelizEstable == LOW) { // TOCADO → ENOJADO
       // no tocamos tu lógica: disparamos igual que con el botón
       Escena e = escenas_actual();
-      if (e == ESCENA_NORMAL || e == ESCENA_ENOJADO || e == ESCENA_TRISTE || e == ESCENA_RISA) {
+      if (e == ESCENA_NORMAL || e == ESCENA_ENOJADO || e == ESCENA_TRISTE || e == ESCENA_RISA || e == ESCENA_FRIO || e == ESCENA_CALOR) {
         escenas_set(ESCENA_FELIZ, ESTADO);
       }
       // si querés “mientras esté tocado está enojado”, re-llamá escenas_set(ESCENA_ENOJADO, ESTADO) cada loop
@@ -134,7 +142,7 @@ bool lecturaRisa = digitalRead(PIN_TOUCH_RISA);
     if (touchRisaEstable == LOW) { // TOCADO → ENOJADO
       // no tocamos tu lógica: disparamos igual que con el botón
       Escena e = escenas_actual();
-      if (e == ESCENA_NORMAL || e == ESCENA_FELIZ || e == ESCENA_TRISTE || e == ESCENA_ENOJADO) {
+      if (e == ESCENA_NORMAL || e == ESCENA_FELIZ || e == ESCENA_TRISTE || e == ESCENA_ENOJADO || e == ESCENA_FRIO || e == ESCENA_CALOR) {
         escenas_set(ESCENA_RISA, ESTADO);
       }
       // si querés “mientras esté tocado está enojado”, re-llamá escenas_set(ESCENA_ENOJADO, ESTADO) cada loop
@@ -145,13 +153,51 @@ bool lecturaRisa = digitalRead(PIN_TOUCH_RISA);
     }
   }
 
+
+// ----- Clima por DHT (no pisar emociones ni touch) -----
+float tC, h;
+bool ok = dht_leer(tC, h, now);
+
+Escena e = escenas_actual();
+enEmocion = (e == ESCENA_ENOJADO || e == ESCENA_FELIZ || e == ESCENA_TRISTE || e == ESCENA_RISA || e == ESCENA_FRIO || e == ESCENA_CALOR);
+
+// sólo si hay lectura válida y NO hay emoción activa
+if (ok && !enEmocion) {
+  if (tC >= TEMP_CALOR_C) {
+    if (e != ESCENA_CALOR) escenas_set(ESCENA_CALOR, ESTADO);
+  } else if (tC <= TEMP_FRIO_C) {
+    if (e != ESCENA_FRIO) escenas_set(ESCENA_FRIO, ESTADO);
+  } else {
+    // rango templado → si estabas en FRIO/CALOR, volver a NORMAL
+    if (e == ESCENA_FRIO || e == ESCENA_CALOR) escenas_set(ESCENA_NORMAL, ESTADO);
+  }
+}
+
+
+static unsigned long lastDhtMs = 0;
+if (now - lastDhtMs >= 2000) {          // DHT11: no más rápido que 1 lectura / 2 s
+  lastDhtMs = now;
+
+  float tempC = NAN, hum = NAN;
+  if (sensores_leer_tempHum(tempC, hum)) {
+    Serial.print("Temp: "); Serial.print(tempC, 1); Serial.print(" °C  |  ");
+    Serial.print("Hum: ");  Serial.print(hum,   0); Serial.println(" %");
+  } else {
+    Serial.println("Lectura inválida (NaN). Revisa cableado/tipo/tiempo.");
+  }
+}
+// (opcional) log
+// if (ok) { Serial.print("DHT T="); Serial.print(tC); Serial.print("C H="); Serial.println(h); }
+
+
+
   // ======= FIX #1: estado de presión correcto =========
     // <-- ANTES lo tenías invertido
   bool touchRisaPresionado = (touchRisaEstable == HIGH);      // <-- ANTES lo tenías invertido
 
   // ======= FIX #2 (recomendado): si cambió a ENOJADO en este frame, reflejalo =======
   escena = escenas_actual();
-  enEmocion = (escena == ESCENA_ENOJADO || escena == ESCENA_FELIZ || escena == ESCENA_TRISTE || escena == ESCENA_RISA);
+  enEmocion = (escena == ESCENA_ENOJADO || escena == ESCENA_FELIZ || escena == ESCENA_TRISTE || escena == ESCENA_RISA || escena == ESCENA_FRIO || escena == ESCENA_CALOR);
 
   // =========================================================
   // LUZ (LDR) con retardo de 3 s — NO pisa emociones NI touch

@@ -13,7 +13,12 @@ int  ldr_claridad_0a100(int lectura_cruda);
 // “Digital” por software: true si está por encima del umbral de claridad
 bool ldr_es_claro(int lectura_cruda);
 
+// DHT11
+void dht_init();
+bool dht_leer(float& tempC, float& hum, unsigned long now);
+bool sensores_leer_tempHum(float &tempC, float &hum) ;
 
-void servo_init();                       // llamar en setup()
-void servo_update_from_offset(int x);    // mapear est.moveOffsetX -> servo
-void servo_center();                
+
+void servo_init();                       // llamalo en setup()
+void servo_update_from_offset(int x);    // seguir ESTADO.moveOffsetX
+void servo_center();  
